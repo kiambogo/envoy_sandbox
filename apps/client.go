@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"time"
 
-	pb "hello/proto"
+	pb "main/proto"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"

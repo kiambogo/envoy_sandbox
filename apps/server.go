@@ -6,7 +6,7 @@ import (
 	"net"
 	"time"
 
-	pb "hello/proto"
+	pb "main/proto"
 
 	"github.com/spf13/cobra"
 	"google.golang.org/grpc"
