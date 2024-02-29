@@ -3,13 +3,15 @@ package main
 import (
 	"context"
 	"log"
+	"net"
 	"net/http"
+	"net/url"
+	"os"
 	"time"
 
 	pb "main/proto"
 
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/spf13/cobra"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
@@ -60,8 +62,40 @@ var clientCmd = &cobra.Command{
 }
 
 func runClient() {
+	log.Println("Starting gRPC client")
+	proxyURL := os.Getenv("PROXY_URL")
+
+	targetURL := os.Getenv("TARGET_URL")
+	if targetURL == "" {
+		log.Fatal("TARGET_URL environment variable is not set")
+	}
+
+	log.Printf("Using proxy: %v", proxyURL)
+
+	proxiedTransport := &http.Transport{
+		Proxy: func(req *http.Request) (*url.URL, error) {
+			return url.Parse(proxyURL)
+		},
+		DialContext: (&net.Dialer{
+			Timeout:   30 * time.Second,
+			KeepAlive: 30 * time.Second,
+			DualStack: true,
+		}).DialContext,
+		ForceAttemptHTTP2:     true,
+		MaxIdleConns:          100,
+		IdleConnTimeout:       90 * time.Second,
+		TLSHandshakeTimeout:   10 * time.Second,
+		ExpectContinueTimeout: 1 * time.Second,
+	}
+
+	dialer := func(ctx context.Context, address string) (net.Conn, error) {
+		log.Printf("Dialing %v", address)
+		return proxiedTransport.DialContext(ctx, "tcp", address)
+	}
+
 	// Set up a connection to the server.
-	conn, err := grpc.Dial(serverAddress, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	conn, err := grpc.Dial(serverAddress, grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithContextDialer(dialer), grpc.WithAuthority(targetURL))
+
 	if err != nil {
 		log.Fatalf("Failed to connect: %v", err)
 	}
@@ -78,21 +112,21 @@ func runClient() {
 
 	log.Printf("Generating traffic for %v...", duration)
 
-	go func() {
-		for {
-			select {
-			case <-ticker.C:
-				generateTraffic(client)
-			case _ = <-timer.C:
-				log.Println("reached end of duration, exiting")
-				return
-			}
+	//	go func() {
+	for {
+		select {
+		case <-ticker.C:
+			generateTraffic(client)
+		case _ = <-timer.C:
+			log.Println("reached end of duration, exiting")
+			return
 		}
-	}()
+	}
+	//}()
 
 	// Start an HTTP server for Prometheus metrics
-	http.Handle("/metrics", promhttp.Handler())
-	log.Fatal(http.ListenAndServe(":8080", nil))
+	//http.Handle("/metrics", promhttp.Handler())
+	//log.Fatal(http.ListenAndServe(":8080", nil))
 }
 
 func generateTraffic(client pb.GreeterClient) {

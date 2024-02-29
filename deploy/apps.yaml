@@ -82,16 +82,24 @@ spec:
           image: apps:latest
           imagePullPolicy: IfNotPresent
           command: ["/app", "client"]
-          args: ["--address", "grpc-server-service:9090", "--qps", "1", "--duration", "30m"]
-        #- name: envoy-container
-        #  image: envoyproxy/envoy:v1.29.1
-        #  ports:
-        #    - containerPort: 9090
-        #  volumeMounts:
-        #    - name: envoy-config
-        #      mountPath: /etc/envoy
-        #  command: ["/usr/local/bin/envoy"]
-        #  args: ["--config-path", "/etc/envoy/envoy.yaml"]
+          args: ["--address", "localhost:9090", "--qps", "1", "--duration", "30m"]
+          env:
+            - name: "PROXY_URL"
+              value: "127.0.0.1:9091"
+            - name: TARGET_URL
+              value: "grpc-server-service.default.svc.cluster.local:9090"
+            - name: GRPC_GO_LOG_SEVERITY_LEVEL
+              value: info
+        - name: envoy-container
+          image: envoyproxy/envoy:v1.29.1
+          ports:
+            - containerPort: 9090
+            - containerPort: 8080
+          volumeMounts:
+            - name: envoy-config
+              mountPath: /etc/envoy
+          command: ["/usr/local/bin/envoy"]
+          args: ["--config-path", "/etc/envoy/envoy.yaml", "--log-level", "debug"]
       volumes:
         - name: envoy-config
           configMap:
@@ -106,12 +114,13 @@ metadata:
   annotations:
     prometheus.io/port: "8080"
     prometheus.io/scrape: "true"
-  #  prometheus.io/path: '/stats/prometheus'
+    prometheus.io/path: '/stats/prometheus'
 spec:
   selector:
     app: grpc-client
   ports:
-    - protocol: TCP
+    - name: metrics
+      protocol: TCP
       port: 8080
       targetPort: 8080
 
@@ -192,6 +201,11 @@ metadata:
   name: client-envoy-configmap
 data:
   envoy.yaml: |
+    admin:
+      address:
+        socket_address:
+          address: 0.0.0.0
+          port_value: 8080
     static_resources:
       listeners:
       - name: listener_0
@@ -229,7 +243,7 @@ data:
                         "@type": type.googleapis.com/envoy.extensions.network.dns_resolver.cares.v3.CaresDnsResolverConfig
                         resolvers:
                         - socket_address:
-                            address: "10.96.0.10"
+                            address: 10.96.0.10
                             port_value: 53
                         dns_resolver_options:
                           use_tcp_for_dns_lookups: true
@@ -239,8 +253,9 @@ data:
                   "@type": type.googleapis.com/envoy.extensions.filters.http.router.v3.Router
 
       clusters:
-      - name:
+      - name: dynamic_forward_proxy_cluster
         lb_policy: CLUSTER_PROVIDED
+        http2_protocol_options: {}
         cluster_type:
           name: envoy.clusters.dynamic_forward_proxy
           typed_config:
@@ -254,7 +269,7 @@ data:
                   "@type": type.googleapis.com/envoy.extensions.network.dns_resolver.cares.v3.CaresDnsResolverConfig
                   resolvers:
                   - socket_address:
-                      address: "10.96.0.10"
+                      address: 10.96.0.10
                       port_value: 53
                   dns_resolver_options:
                     use_tcp_for_dns_lookups: true
