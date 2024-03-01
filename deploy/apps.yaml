@@ -3,7 +3,7 @@ kind: Deployment
 metadata:
   name: grpc-server-deployment
 spec:
-  replicas: 3
+  replicas: 8
   selector:
     matchLabels:
       app: grpc-server
@@ -89,14 +89,12 @@ spec:
           image: apps:latest
           imagePullPolicy: IfNotPresent
           command: ["/app", "client"]
-          args: ["--address", "localhost:9090", "--qps", "1", "--duration", "30m"]
+          args: ["--address", "localhost:9090", "--qps", "20", "--duration", "30m"]
           env:
             - name: "PROXY_URL"
               value: "127.0.0.1:9091"
             - name: TARGET_URL
               value: "grpc-server-service.default:9090"
-            - name: GRPC_GO_LOG_SEVERITY_LEVEL
-              value: info
         - name: envoy-container
           image: envoyproxy/envoy:v1.29.1
           ports:
@@ -238,32 +236,18 @@ data:
                     route:
                       cluster: dynamic_forward_proxy_cluster
                       retry_policy:
-                        #retry_on: "5xx"
                         retry_on: "5xx,cancelled,deadline-exceeded,resource-exhausted,unavailable"
                         num_retries: 5
                         per_try_timeout: 2s
-                        retry_host_predicate:
-                          - name: envoy.retry_host_predicates.previous_hosts
-                            typed_config:
-                              "@type": type.googleapis.com/envoy.extensions.retry.host.previous_hosts.v3.PreviousHostsPredicate
               http_filters:
+              - name: envoy.filters.http.grpc_stats
+                typed_config:
+                  "@type": type.googleapis.com/envoy.extensions.filters.http.grpc_stats.v3.FilterConfig
+                  stats_for_all_methods: true
+                  enable_upstream_stats: true
               - name: envoy.filters.http.dynamic_forward_proxy
                 typed_config:
                   "@type": type.googleapis.com/envoy.extensions.filters.http.dynamic_forward_proxy.v3.FilterConfig
-                  dns_cache_config:
-                    name: dynamic_forward_proxy_cache_config
-                    dns_refresh_rate: 1s
-                    host_ttl: 1s
-                    dns_lookup_family: V4_ONLY
-                    typed_dns_resolver_config:
-                      name: envoy.network.dns_resolver.cares
-                      typed_config:
-                        "@type": type.googleapis.com/envoy.extensions.network.dns_resolver.cares.v3.CaresDnsResolverConfig
-                        # Enable resolvers as a fallback, forcing DNS resolution through the pod resolv.conf (kube-proxy)
-                        use_resolvers_as_fallback: true
-                        dns_resolver_options:
-                          # Enable default search domains so that '*.svc.cluster.local' does not need to be specified
-                          no_default_search_domain: false
               - name: envoy.filters.http.router
                 typed_config:
                   "@type": type.googleapis.com/envoy.extensions.filters.http.router.v3.Router
@@ -274,12 +258,6 @@ data:
         # Must include http2_protocol_options to allow for gRPC trailers to be supported
         http2_protocol_options: {}
         dns_refresh_rate: 1s
-        health_checks:
-        - timeout: 5s
-          interval: 5s
-          unhealthy_threshold: 1
-          healthy_threshold: 1
-          grpc_health_check: {}
         cluster_type:
           name: envoy.clusters.dynamic_forward_proxy
           typed_config:

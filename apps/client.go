@@ -117,7 +117,7 @@ func runClient() {
 	for {
 		select {
 		case <-ticker.C:
-			generateTraffic(client)
+			go generateTraffic(client)
 		case _ = <-timer.C:
 			log.Println("reached end of duration, exiting")
 			return
@@ -139,20 +139,16 @@ func generateTraffic(client pb.GreeterClient) {
 	// Record the start time of the request
 	startTime := time.Now()
 
-	log.Printf("Sending request with x-request-id: %v", ctx.Value("x-request-id"))
-
 	// Call the SayHello RPC.
 	_, err := client.SayHello(ctx, &pb.HelloRequest{})
 	if err != nil {
-		log.Printf("Error calling SayHello: %v", err)
+		log.Printf("REQUEST with id %v FAILED: %v", ctx.Value("x-request-id"), err)
 		statusCode := status.Code(err)
 		requestCounter.WithLabelValues(statusCode.String()).Inc()
 		// Observe the latency for failed requests
 		latencyHistogram.WithLabelValues(statusCode.String()).Observe(time.Since(startTime).Seconds())
 		return
 	}
-
-	log.Printf("Received response for x-request-id: %v", ctx.Value("x-request-id"))
 
 	// Increment the total successful requests counter.
 	requestCounter.WithLabelValues("success").Inc()
