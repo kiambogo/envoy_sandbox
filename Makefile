@@ -9,6 +9,7 @@ help:
 	@echo "� $(GREEN)make apps-docker$(RESET) - Build apps docker image"
 	@echo "� $(GREEN)make go-proto$(RESET) - Compile proto files"
 	@echo "� $(GREEN)make kube-deploy$(RESET) - Deploy the stack to minikube"
+	@echo "� $(GREEN)make kube-clean$(RESET) - Delete the stack from minikube"
 
 check-minikube:
 	@if [ -z "$$(minikube status | grep Running)" ]; then \

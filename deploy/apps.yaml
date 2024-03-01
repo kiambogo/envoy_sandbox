@@ -45,6 +45,8 @@ metadata:
     prometheus.io/scrape: "true"
     prometheus.io/path: '/stats/prometheus'
 spec:
+  type: ClusterIP
+  clusterIP: None
   selector:
     app: grpc-server
   ports:
@@ -87,7 +89,7 @@ spec:
             - name: "PROXY_URL"
               value: "127.0.0.1:9091"
             - name: TARGET_URL
-              value: "grpc-server-service.default.svc.cluster.local:9090"
+              value: "grpc-server-service.default:9090"
             - name: GRPC_GO_LOG_SEVERITY_LEVEL
               value: info
         - name: envoy-container
@@ -236,18 +238,18 @@ data:
                   "@type": type.googleapis.com/envoy.extensions.filters.http.dynamic_forward_proxy.v3.FilterConfig
                   dns_cache_config:
                     name: dynamic_forward_proxy_cache_config
+                    dns_refresh_rate: 1s
+                    host_ttl: 1s
                     dns_lookup_family: V4_ONLY
                     typed_dns_resolver_config:
                       name: envoy.network.dns_resolver.cares
                       typed_config:
                         "@type": type.googleapis.com/envoy.extensions.network.dns_resolver.cares.v3.CaresDnsResolverConfig
-                        resolvers:
-                        - socket_address:
-                            address: 10.96.0.10
-                            port_value: 53
+                        # Enable resolvers as a fallback, forcing DNS resolution through the pod resolv.conf (kube-proxy)
+                        use_resolvers_as_fallback: true
                         dns_resolver_options:
-                          use_tcp_for_dns_lookups: true
-                          no_default_search_domain: true
+                          # Enable default search domains so that '*.svc.cluster.local' does not need to be specified
+                          no_default_search_domain: false
               - name: envoy.filters.http.router
                 typed_config:
                   "@type": type.googleapis.com/envoy.extensions.filters.http.router.v3.Router
@@ -255,6 +257,7 @@ data:
       clusters:
       - name: dynamic_forward_proxy_cluster
         lb_policy: CLUSTER_PROVIDED
+        # Must include http2_protocol_options to allow for gRPC trailers to be supported
         http2_protocol_options: {}
         cluster_type:
           name: envoy.clusters.dynamic_forward_proxy
@@ -262,15 +265,15 @@ data:
             "@type": type.googleapis.com/envoy.extensions.clusters.dynamic_forward_proxy.v3.ClusterConfig
             dns_cache_config:
               name: dynamic_forward_proxy_cache_config
+              dns_refresh_rate: 1s
+              host_ttl: 1s
               dns_lookup_family: V4_ONLY
               typed_dns_resolver_config:
                 name: envoy.network.dns_resolver.cares
                 typed_config:
                   "@type": type.googleapis.com/envoy.extensions.network.dns_resolver.cares.v3.CaresDnsResolverConfig
-                  resolvers:
-                  - socket_address:
-                      address: 10.96.0.10
-                      port_value: 53
+                  # Enable resolvers as a fallback, forcing DNS resolution through the pod resolv.conf (kube-proxy)
+                  use_resolvers_as_fallback: true
                   dns_resolver_options:
-                    use_tcp_for_dns_lookups: true
-                    no_default_search_domain: true
+                    # Enable default search domains so that '*.svc.cluster.local' does not need to be specified
+                    no_default_search_domain: false
