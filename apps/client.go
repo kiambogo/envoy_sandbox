@@ -11,6 +11,7 @@ import (
 
 	pb "main/proto"
 
+	"github.com/google/uuid"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/spf13/cobra"
 	"google.golang.org/grpc"
@@ -132,13 +133,16 @@ func runClient() {
 func generateTraffic(client pb.GreeterClient) {
 	// Set a timeout for each RPC call.
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx = context.WithValue(ctx, "x-request-id", uuid.New().String())
 	defer cancel()
 
 	// Record the start time of the request
 	startTime := time.Now()
 
+	log.Printf("Sending request with x-request-id: %v", ctx.Value("x-request-id"))
+
 	// Call the SayHello RPC.
-	response, err := client.SayHello(ctx, &pb.HelloRequest{})
+	_, err := client.SayHello(ctx, &pb.HelloRequest{})
 	if err != nil {
 		log.Printf("Error calling SayHello: %v", err)
 		statusCode := status.Code(err)
@@ -148,8 +152,7 @@ func generateTraffic(client pb.GreeterClient) {
 		return
 	}
 
-	// Log the response message.
-	log.Printf("Server response: %s", response.Message)
+	log.Printf("Received response for x-request-id: %v", ctx.Value("x-request-id"))
 
 	// Increment the total successful requests counter.
 	requestCounter.WithLabelValues("success").Inc()
